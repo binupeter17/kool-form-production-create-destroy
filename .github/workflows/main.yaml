@@ -1,0 +1,80 @@
+name: "AMI Building For Kool Form Production"
+
+on: 
+
+  push:
+
+    branches:
+      - main
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY }}
+      AWS_SECRET_KEY: ${{ secrets.AWS_SECRET_KEY }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      packer_version: "1.11.2"
+    steps:
+      - name: "Repository Checkout"
+        uses: actions/checkout@v4
+
+      - name: "Packer installation"
+        uses: hashicorp/setup-packer@v2
+        with:
+          version: ${{ env.packer_version }}
+
+      - name: "Packer init"
+        run: packer init .
+        working-directory: ./packer/
+
+      - name: "Packer validate"
+        run: |
+          packer validate \
+            -var-file="variables.pkrvars.hcl" \
+            -var="git_commit_id=${{ github.sha }}" .
+        working-directory: ./packer/
+      
+      - name: "Packer build image"
+        run: |
+          packer build \
+            -var-file="variables.pkrvars.hcl" \
+            -var="git_commit_id=${{ github.sha }}" .
+        working-directory: ./packer/
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    env:
+      AWS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY }}
+      AWS_SECRET_KEY: ${{ secrets.AWS_SECRET_KEY }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+    steps:
+      - name: "Repository Checkout"
+        uses: actions/checkout@v4
+
+      - name: "Terraform Setup"
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.9.8
+
+      - name: "Terraform Init"
+        run: terraform init
+        working-directory: ./terraform/
+
+      - name: "Terraform Fmt"
+        run: terraform fmt
+        working-directory: ./terraform/
+
+      - name: "Terraform Validate"
+        run: terraform validate
+        working-directory: ./terraform/
+
+      - name: "Terraform Plan"
+        run: terraform plan
+        working-directory: ./terraform/
+
+      - name: "Terraform Apply"
+        run: terraform apply -auto-approve
+        working-directory: ./terraform/
